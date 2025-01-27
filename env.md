@@ -19,19 +19,21 @@ The .env file format aims to be a minimal, unambiguous configuration file format
 - [Data Types](#data-types)
 - [Multi-line Values](#multi-line-values)
 - [Error Handling](#error-handling)
+- [Parser Reliability Requirements](#parser-reliability-requirements)
+- [Variable Expansion](#variable-expansion)
 - [Filename Extension](#filename-extension)
 - [MIME Type](#mime-type)
 
 ## Spec
 
-- `.env` files MUST be valid UTF-8 encoded documents
+- .env files MUST be valid UTF-8 encoded documents
 - Files SHOULD be named `.env` (see [Filename Extension](#filename-extension) for variations)
-- Whitespace means tab (`0x09`) or space (`0x20`)
-- Newline means LF (`0x0A`) or CRLF (`0x0D 0x0A`)
+- Whitespace means `tab` (`0x09`) or `space` (`0x20`)
+- Newline means `LF` (`0x0A`) or `CRLF` (`0x0D` `0x0A`)
 - Every non-empty line MUST be either:
   - A comment
   - A key/value pair
-  - A line continuation of a previous value
+  - A line continuation of a previous value (value only, keys MUST NOT span multiple lines)
 - Empty lines are allowed and MUST be ignored
 - Parsers MUST preserve empty values (e.g., `FOO=`)
 - Parsers MUST preserve whitespace in values unless explicitly trimmed by quotes or other mechanisms
@@ -68,7 +70,7 @@ MESSAGE="Hello # World" # The '#' after Hello is part of the value
 
 ## Key/Value Pair
 
-The primary building block of an .env file is the key/value pair. Each pair MUST be on its own line unless using a line continuation character (see [Multi-line Values](#multi-line-values)).
+The primary building block of an .env file is the key/value pair. Each pair MUST be on its own line unless using a line continuation character (see [Multi-line Values](#multi-line-values)). Keys MUST NOT span multiple lines.
 
 ```env
 KEY=value
@@ -84,9 +86,10 @@ URL=https://example.com/path?foo=bar&baz=qux  # Valid, only first = is separator
 
 Keys are case-sensitive and MUST:
 
-- Begin with a letter (A-Z, a-z) or underscore
+- Begin with a letter (`A-Z`, `a-z`) or underscore (`_`)
 - Contain only letters, numbers, and underscores
 - Not be empty
+- Not span multiple lines
 
 ```env
 # Valid keys
@@ -99,6 +102,8 @@ _FOO=value
 123FOO=value   # Cannot start with number
 FOO-BAR=value  # Cannot contain hyphens
 .FOO=value     # Cannot start with period
+FOO\
+BAR=value      # Cannot span multiple lines
 ```
 
 Traditional environment variable naming conventions RECOMMEND:
@@ -141,7 +146,7 @@ PATH=/usr/local/bin:/usr/bin:/bin
 
 ### Quoted Strings
 
-Values may be enclosed in single or double quotes. Quotes are required if the value:
+Values may be enclosed in single (`'`) or double (`"`) quotes. Quotes are required if the value:
 
 - Contains leading or trailing whitespace you want to preserve
 - Contains a comment character that should be treated as part of the value
@@ -194,27 +199,33 @@ Implementations that support type coercion MUST document their coercion rules an
 
 ## Multi-line Values
 
-Long values can span multiple lines using one of two methods:
+Long values can span multiple lines using one of two methods. Note that while values can span multiple lines, keys MUST NOT:
 
 ### Quoted Multi-line
 
-Values enclosed in quotes can contain newlines:
+Values (but not keys) enclosed in quotes can contain newlines:
 
 ```env
 PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----
 MIIBOgIBAAJBAOsfi5AGYhdRs/x6q5H7kScxA0Kzrw
 ...
 -----END RSA PRIVATE KEY-----"
+
+INVALID_KEY="MULTI
+LINE"=value  # Invalid: keys cannot contain newlines
 ```
 
 ### Line Continuation
 
-A backslash at the end of a line indicates the value continues on the next line:
+A backslash (`\`) at the end of a line indicates the value continues on the next line. This can only be used for values, not keys:
 
 ```env
 LONG_MESSAGE=first line \
 second line \
 third line
+
+INVALID_KEY=MULTI \
+LINE=value  # Invalid: keys cannot use line continuation
 ```
 
 For line continuations:
@@ -223,6 +234,18 @@ For line continuations:
 - Leading whitespace on continuation lines is included in the value
 - Empty continuation lines are preserved
 - Comments are not allowed on continuation lines
+
+Invalid continuation examples that MUST trigger ENV005:
+
+```env
+SECRET=password\ # comment
+NEXT=value      # Must trigger ENV005: comment after continuation
+
+VALUE=first\    # Must trigger ENV005: dangling continuation at EOF
+
+INVALID=test \  # Must trigger ENV005: whitespace before continuation
+    next line
+```
 
 ## Error Handling
 
@@ -255,8 +278,110 @@ Parsers MUST implement the following error handling:
 
 ### ENV005: Invalid Line Continuation
 
-- Description: A backslash line continuation followed by a comment or EOF
+- Description: A backslash line continuation followed by a comment or EOF, or with preceding whitespace
 - Required behavior: Parser MUST throw an error
+
+```env
+SECRET=password\ # comment
+NEXT=value      # Should trigger ENV005
+```
+
+### ENV006: Multi-line Key
+
+- Description: Attempt to define a key across multiple lines (either through quotes or line continuation)
+- Required behavior: Parser MUST throw an error
+- Example:
+
+  ```env
+  MULTI\
+  LINE_KEY=value
+
+  "MULTI
+  LINE"=value
+  ```
+
+### ENV007: Invalid Encoding
+
+- Description: File contains non-UTF-8 characters
+- Required behavior: Parser MUST throw an error
+
+## Parser Reliability Requirements
+
+The .env format is used for configuration that directly affects application behavior and security. Therefore, parsers MUST prioritize reliability and predictability over convenience. This section outlines common pitfalls and required parser behavior.
+
+### Silent Failures
+
+Parsers MUST NOT silently ignore malformed input. The following examples show problematic input that MUST produce errors:
+
+```env
+FOO           # Invalid: no assignment
+BAR=value     # This line is valid, but parser must still error due to FOO
+
+KEY VALUE     # Invalid: missing assignment operator
+PORT=8080     # This line is valid, but parser must still error due to previous line
+
+USER=john\    # Invalid: dangling continuation
+PASSWORD=     # This line is valid, but parser must still error due to previous line
+```
+
+### Line Independence
+
+Each line MUST be validated independently before being combined with any other lines. Parsers MUST NOT:
+
+- Combine non-empty lines that lack assignment operators
+- Join lines unless explicitly continued with a backslash
+- Skip validation of any non-empty, non-comment line
+
+Example of incorrect parser behavior:
+
+```env
+FOO
+BAR=value     # Some parsers incorrectly return { BAR: 'value' }
+              # Must error due to invalid FOO line
+```
+
+### Error Consistency
+
+Parsers MUST provide consistent error behavior:
+
+- Same input MUST produce same errors
+- Partial results MUST NOT be returned if any line is invalid
+- Error messages SHOULD identify the specific line and issue
+- Error codes MUST match those specified in Error Handling section
+
+Example of invalid partial results:
+
+```env
+VALID_KEY=value
+INVALID KEY=foo  # If parser encounters this
+ANOTHER_VALID=bar
+# Parser must not return { VALID_KEY: 'value' } and then error
+# Must error immediately without returning any values
+```
+
+### Implementation Requirements
+
+To ensure reliable behavior, implementations MUST:
+
+1. Validate entire file before processing any assignments
+2. Throw appropriate error (see Error Handling) for first encountered issue
+3. Not attempt recovery from invalid syntax
+4. Not provide configuration options that bypass these requirements
+
+The presence of valid lines in a file MUST NOT affect the parser's responsibility to error on invalid lines. This helps catch configuration issues early and prevents unpredictable behavior across different environments and implementations.
+
+## Variable Expansion
+
+Variable expansion (e.g., `FOO=${BAR}`) is explicitly NOT part of this specification. Implementations MAY provide variable expansion as an optional feature, but if they do:
+
+1. It MUST be disabled by default
+2. It MUST be explicitly documented
+3. It MUST define clear rules for:
+   - Syntax (e.g., `${VAR}` vs `$VAR` vs `%VAR%`)
+   - Scope (current file only, system environment, or both)
+   - Error handling for undefined variables
+   - Circular reference detection
+   - Maximum expansion depth
 
 ## Filename Extension
 
@@ -270,4 +395,4 @@ The canonical filename is `.env`. Common variations include:
 
 ## MIME Type
 
-When transferring .env files over the internet, the appropriate MIME type is `application/x-env`.
+When transferring .env files over the internet, the appropriate MIME type is `application/env`.
