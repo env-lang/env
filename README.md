@@ -12,4 +12,14 @@ The env specification is a work in progress, you can view the document in its cu
 
 You are invited to contribute to the development of this specification by submitting a [pull request](../../pulls), opening [an issue](../../issues), or joining us in [the discussions](../../discussions).
 
+All contributions are welcome! Here are some things we need:
 
+- [ ] Feedback on the specification
+- [ ] Examples of .env files
+- [ ] Examples of .env file parsing
+- [ ] Implementations in various languages
+- [ ] Test cases for .env file parsing
+- [ ] Documentation for .env file parsing
+- [ ] Use cases for .env files
+- [ ] Comparisons to other configuration file formats
+- [ ] Anything else you can think of!
