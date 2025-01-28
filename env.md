@@ -2,7 +2,7 @@
 
 ### Environment Variables File Format Specification
 
-Authored by Jon Schlinkert, et al.
+Authored by [Jon Schlinkert](https://github.com/jonschlinkert), et al.
 
 ## Objectives
 
@@ -409,4 +409,36 @@ The canonical filename is `.env`. Common variations include:
 
 ## MIME Type
 
-When transferring .env files over the internet, the appropriate MIME type is `application/env`.
+When transferring .env files over the internet, the appropriate MIME type is `application/env`. This designation is justified by the following characteristics that make .env files distinct from other formats:
+
+1. **Distinct Format**
+
+   - Specific syntax rules for key-value pairs
+   - Defined comment styles
+   - Special handling of quotes and whitespace
+   - Line continuation mechanisms
+   - Rules for multi-line values
+
+2. **Specific Processing Model**
+
+   - Strict parsing requirements
+   - Defined error conditions and handling
+   - Special security considerations for environment variables
+   - Load-time behavior distinct from other configuration formats
+
+3. **Unique Semantic Meaning**
+   - Files represent environment variable declarations
+   - Values have specific runtime implications
+   - Format carries distinct security and operational considerations
+
+While .env files may appear superficially similar to plain text or other configuration formats, their unique combination of syntax, processing requirements, and semantic meaning warrants a distinct MIME type. This is analogous to how `application/json` exists despite JSON being representable as plain text, because the specific structure and processing model require unique identification.
+
+The `application/env` MIME type serves to:
+
+- Properly identify .env files in transport
+- Signal correct processing requirements to consuming systems
+- Enable appropriate security handling
+- Facilitate correct caching behavior
+- Allow proper content negotiation
+
+When transferring .env files over the internet, implementations MUST use the `application/env` MIME type.
