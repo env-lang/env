@@ -1,4 +1,4 @@
-# .ENV v1.0.0
+# .ENV
 
 ### Environment Variables File Format Specification
 
@@ -160,11 +160,18 @@ HASH="my#password"  # Without quotes, #password would be a comment
 
 ## Data Types
 
-While all values in .env files are technically strings, many implementations provide type coercion for common data types. This behavior is OPTIONAL but when implemented SHOULD follow these conventions:
+While all values in .env files are technically strings, parsers MAY implement optional type coercion for common data types. If type coercion is implemented:
+
+1. It MUST be optional and easily disabled
+2. The default behavior SHOULD be string-only unless type coercion is an established standard in the ecosystem
+3. The implementation MUST document its coercion rules
+4. Coercion MUST NOT affect the original string value
+
+When implemented, type coercion SHOULD follow these conventions:
 
 ### Boolean
 
-The following string values SHOULD be interpretable as booleans:
+The following string values MAY be interpretable as booleans:
 
 ```env
 DEBUG=true   # true
@@ -194,8 +201,6 @@ NULL=null
 NULL=NULL
 NULL=
 ```
-
-Implementations that support type coercion MUST document their coercion rules and SHOULD provide a way to disable automatic type coercion.
 
 ## Multi-line Values
 
@@ -332,12 +337,21 @@ Each line MUST be validated independently before being combined with any other l
 - Join lines unless explicitly continued with a backslash
 - Skip validation of any non-empty, non-comment line
 
-Example of incorrect parser behavior:
+Examples of invalid line joining that MUST produce errors:
 
 ```env
 FOO
-BAR=value     # Some parsers incorrectly return { BAR: 'value' }
+BAR=value     # Some parsers incorrectly return { BAR: 'value' } or { 'FOO\nBAR': 'value' }
               # Must error due to invalid FOO line
+
+A=1\n
+B             # Some implementations might try to join B with previous line
+
+FOO=value\n
+BAR           # Must not be joined with previous line
+
+KEY=a
+VALUE         # Must error, not combine into KEY=aVALUE
 ```
 
 ### Error Consistency
@@ -349,13 +363,13 @@ Parsers MUST provide consistent error behavior:
 - Error messages SHOULD identify the specific line and issue
 - Error codes MUST match those specified in Error Handling section
 
-Example of invalid partial results:
+Example of incorrect partial results that MUST be avoided:
 
 ```env
 VALID_KEY=value
-INVALID KEY=foo  # If parser encounters this
+INVALID KEY=foo  # Parser encounters invalid syntax here
 ANOTHER_VALID=bar
-# Parser must not return { VALID_KEY: 'value' } and then error
+# Parser must NOT return { VALID_KEY: 'value' } and then error
 # Must error immediately without returning any values
 ```
 
