@@ -1,6 +1,6 @@
 # env
 
-[Specification for .env](.env)
+[Specification for .env](env.md)
 
 ## Objectives
 
